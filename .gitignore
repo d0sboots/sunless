@@ -1,0 +1,2 @@
+# The script expects game dir in the CWD; ignore that
+*.json

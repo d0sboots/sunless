@@ -50,8 +50,9 @@ BAD_QUALITIES = {
   # All menaces are added dynamically, in InitGlobals()
 }
 
-# A map from exchange id to the list of areas the shop is accesible from. (Not
-# necessarily all the time.)
+# A map from exchange id to the list of areas the shop is accesible from.
+# (Shops might not be accessible there all the time, due to dynamic shop
+# changes.)
 SHOP_AREAS = {}
 
 # Id lookup maps for the various lists
@@ -63,6 +64,7 @@ EVENTS_MAP = {}
 LIMBO = 101956
 
 def ForEachBranch(event):
+  """Iterate over all the branches of an event."""
   for branch in event[CHILD_BRANCHES]:
     for x in EVENT_TYPES:
       outcome = branch[x]
@@ -74,6 +76,7 @@ def ForEachBranch(event):
       yield outcome
 
 def AddShopInfo(group, area):
+  """Update the SHOP_AREAS map for the given shop exchange and area."""
   if area[ID] == LIMBO:
     return
   value = SHOP_AREAS[group[ID]]
@@ -81,6 +84,7 @@ def AddShopInfo(group, area):
     value.append(area)
 
 def InitGlobals():
+  """Initialize all the module-global data needed by other functions."""
   for item in AREAS:
     # Create this key, for the cases where we can't tell if it's on the
     # surface or not. This usually means it's not a port.
@@ -148,6 +152,12 @@ def InitGlobals():
         AddShopInfo(group, AREAS_MAP[area_id])
 
 def MakeShopList():
+  """
+  Reformat the list of exchanges as a list of individual shops.
+
+  The shops will contain a PARENT_GROUP link back to the exchange, which
+  must be dealt with if JSON-dumping to prevent recursive loops.
+  """
   shop_list = []
   for group in EXCHANGES:
     for shop in group[SHOPS]:
@@ -156,6 +166,14 @@ def MakeShopList():
   return shop_list
 
 def FuzzyLookupItem(name_or_id, lst):
+  """
+  Lookup an item by either name or id.
+
+  Looking up by id is exact match. Looking up by name is by containment,
+  and if the term is entirely lowercase then it's also case-insensitive.
+  Multiple matches will throw an exception, unless one of them was an
+  exact match.
+  """
   try:
     idd = int(name_or_id)
     for x in lst:
@@ -181,17 +199,20 @@ def FuzzyLookupItem(name_or_id, lst):
       name_or_id, [x[NAME] for x in matches]))
 
 def NullWrap(x):
+  """Convert Nones to null, needed for compatibility."""
   if x == None:
     return 'null'
   return x
 
 def DumpRawQualities():
+  """Print the table of raw qualities, sorted by id."""
   QUALITIES.sort(key = lambda x: x[ID])
   for item in QUALITIES:
     print('* %d: [[%s]] (%s, %s)' % (
       item[ID], item[NAME], item[NATURE], item[CATEGORY]))
 
 def DumpRawEvents():
+  """Print the table of raw events, sorted by id."""
   EVENTS.sort(key = lambda x: x[ID])
   for item in EVENTS:
     fmt = '* %d: [[%s]] %s| [File:SS %sgaz.png]'
@@ -201,11 +222,13 @@ def DumpRawEvents():
     print(fmt % (item[ID], NullWrap(item[NAME]), area, NullWrap(item[IMAGE])))
 
 def DumpRawShops():
+  """JSON-dump the shops, sorted by exchange id."""
   EXCHANGES.sort(key = lambda x: x[ID])
   for item in EXCHANGES:
     print(json.dumps(item, indent=2))
 
 def QualitiesPage():
+  """Print wiki text for the Qualities page."""
   groups = {}
   for item in QUALITIES:
     if item[CATEGORY] not in ['Story', 'Circumstance']:
@@ -248,6 +271,13 @@ def QualitiesPage():
 [[Category:Sunless Sea qualities| ]]''')
 
 def LocationOfShop(idd, abbreviate=True):
+  """
+  Return markup for the port a shop is located at.
+
+  abbreviate (bool): Controls how shops with multiple locations are formatted.
+      When true (default), returns 'Various', otherwise returns the whole list
+      of ports as links.
+  """
   lookup = SHOP_AREAS[idd]
   if len(lookup) == 1:
     return '[[%s]]' % lookup[0][NAME]
@@ -259,6 +289,12 @@ def LocationOfShop(idd, abbreviate=True):
   return ', '.join(eligible[:-1]) + ', and ' + eligible[-1]
 
 def ShopSortKey(group):
+  """
+  Return a key for sorting shops sensibly in the shops page.
+
+  The logic here sorts alphabetically, except it puts the entries
+  for 'Various' and 'Not available in-game' last.
+  """
   count = len(SHOP_AREAS[group[ID]])
   if count > 1:
     count = 2
@@ -267,6 +303,7 @@ def ShopSortKey(group):
   return (count, LocationOfShop(group[ID]))
 
 def ShopsPage():
+  """Print wiki text for the Shops page."""
   print('==List of Shops==\n')
   EXCHANGES.sort(key=ShopSortKey)
   last_location = None
@@ -299,6 +336,14 @@ def ShopsPage():
 [[Category:Sunless Sea gameplay]]''')
 
 def LinkQty(amount, quality, zero_bad=False):
+  """
+  Return markup for a change in a quality.
+
+  This corresponds exactly to the {{link qty}} template, except
+  it handles reversing the coloring for "bad qualities" like hunger.
+
+  zero_bad (bool): When true, zero is considered a bad result instead of good.
+  """
   if amount == 0:
     invert = zero_bad  # By default, zero is good
   else:
@@ -307,6 +352,7 @@ def LinkQty(amount, quality, zero_bad=False):
       amount, quality[NAME], quality[IMAGE], '|-' if invert else '')
 
 def WikiShop(shop):
+  """Print the wiki text for the given shop."""
   group = shop[PARENT_GROUP]
   del shop[PARENT_GROUP]
   location = LocationOfShop(group[ID], abbreviate=False)
@@ -363,6 +409,14 @@ def WikiShop(shop):
     print('[[Category:Zubmariner Content]]')
 
 def PrintCounts(group):
+  """
+  Print the most common values for each key in a collection of dicts.
+
+  This is a (currently unused) utility method for examining the patterns in the
+  various JSON files, to get a feel for them. It can tell you which fields carry
+  no data (because they're always set to the same value), and which have some
+  meaning but also have a consistent default.
+  """
   counts = {}
   for e in group:
     for k, v in e.items():
@@ -373,11 +427,18 @@ def PrintCounts(group):
     print('"%s": %s' % (k, v.most_common(3)))
 
 def QualitySlice1(x):
+  """Slice qualities by some of their most distinguishing attributes."""
   if not x:
     return (IS_SLOT, PERSISTENT, NATURE, CATEGORY, TAG, ID, NAME)
   return (x[IS_SLOT], x[PERSISTENT], x[NATURE], x[CATEGORY], x[TAG] or '', x[ID], x[NAME])
 
 def PrintBySlice(group, func):
+  """
+  Print information by slice.
+
+  This goes out of the way to line up the data so that each column has a
+  consistent size.
+  """
   group.sort(key=func)
   result = [func(None)]
   sizes = [0] * (len(result[0]) - 1)
